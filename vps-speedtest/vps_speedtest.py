@@ -28,36 +28,29 @@ import unicodedata
 import urllib.error
 import urllib.request
 
-# 测试点列表。地址来自各家公开的 Looking Glass / 测速服务器，
-# 未逐一验证；失效的会在结果里标记出来，可以用 --targets 追加或替换。
+# 测试点列表。"ip" 是官方公布或已实测过的测试 IP：DNS 失败或被解析成 Fake-IP 时用它。
+# 失效的会在结果里标记出来，可以用 --targets 追加或替换。
+# DigitalOcean 的 speedtest-sfoX 域名和 RackNerd LAX02 已 NXDOMAIN，不再内置。
 DEFAULT_PATHS = ["/100MB.test", "/100mb.test", "/10MB.test", "/10mb.test"]
 
 TARGETS = [
-    # Vultr
-    {"name": "Vultr-LosAngeles", "host": "lax-ca-us-ping.vultr.com", "paths": ["/vultr.com.100MB.bin"]},
+    # Vultr（西海岸为主要候选，东部/中部作参照）
+    {"name": "Vultr-LosAngeles", "host": "lax-ca-us-ping.vultr.com", "ip": "108.61.219.200",
+     "paths": ["/vultr.com.100MB.bin"]},
     {"name": "Vultr-SiliconValley", "host": "sjo-ca-us-ping.vultr.com", "paths": ["/vultr.com.100MB.bin"]},
-    {"name": "Vultr-Seattle", "host": "wa-us-ping.vultr.com", "paths": ["/vultr.com.100MB.bin"]},
+    {"name": "Vultr-Seattle", "host": "wa-us-ping.vultr.com", "ip": "108.61.194.105",
+     "paths": ["/vultr.com.100MB.bin"]},
     {"name": "Vultr-Dallas", "host": "tx-us-ping.vultr.com", "paths": ["/vultr.com.100MB.bin"]},
-    {"name": "Vultr-Chicago", "host": "il-us-ping.vultr.com", "paths": ["/vultr.com.100MB.bin"]},
     {"name": "Vultr-NewJersey", "host": "nj-us-ping.vultr.com", "paths": ["/vultr.com.100MB.bin"]},
-    {"name": "Vultr-Atlanta", "host": "ga-us-ping.vultr.com", "paths": ["/vultr.com.100MB.bin"]},
-    # DigitalOcean
-    {"name": "DO-SFO2", "host": "speedtest-sfo2.digitalocean.com", "paths": ["/10mb.test", "/100mb.test"]},
-    {"name": "DO-SFO3", "host": "speedtest-sfo3.digitalocean.com", "paths": ["/10mb.test", "/100mb.test"]},
-    {"name": "DO-NYC1", "host": "speedtest-nyc1.digitalocean.com", "paths": ["/10mb.test", "/100mb.test"]},
-    {"name": "DO-NYC3", "host": "speedtest-nyc3.digitalocean.com", "paths": ["/10mb.test", "/100mb.test"]},
-    # Linode / Akamai
-    {"name": "Linode-Fremont", "host": "speedtest.fremont.linode.com", "paths": ["/100MB-fremont.bin"]},
-    {"name": "Linode-Newark", "host": "speedtest.newark.linode.com", "paths": ["/100MB-newark.bin"]},
-    # RackNerd
-    {"name": "RackNerd-LAX02", "host": "lg-lax02.racknerd.com"},
-    {"name": "RackNerd-LAX03", "host": "lg-lax03.racknerd.com"},
-    {"name": "RackNerd-SanJose", "host": "lg-sj.racknerd.com"},
-    {"name": "RackNerd-Seattle", "host": "lg-sea.racknerd.com"},
-    {"name": "RackNerd-NewYork", "host": "lg-ny.racknerd.com"},
-    # CloudCone
+    # RackNerd（IP 来自官方 DC-03 机房页）
+    {"name": "RackNerd-LAX03", "host": "lg-lax03.racknerd.com", "ip": "107.174.51.158"},
+    # CloudCone（旧 LG 会 301 跳到新地址）
     {"name": "CloudCone-LA", "host": "lg-la.us.cloudc.one"},
+    {"name": "CloudCone-LA-old", "host": "la.lg.cloudc.one", "ip": "185.206.180.179"},
 ]
+
+# 到美国的真实 RTT 不可能低于这个值；更低说明 VPN/TUN 在本地代答了 TCP 握手
+MIN_PLAUSIBLE_MS = 50
 
 FAKE_IP_NET = ipaddress.ip_network("198.18.0.0/15")  # Clash / sing-box 等 Fake-IP 常用网段
 USER_AGENT = "Mozilla/5.0 (vps-speedtest)"
@@ -93,12 +86,18 @@ def ping_target(t, args):
          "ok": 0, "loss_pct": 100.0, "min_ms": None, "median_ms": None, "jitter_ms": None,
          "mbps": None, "note": ""}
     ip = resolve(t["host"])
-    if not ip:
-        r["note"] = "DNS 解析失败"
-        return r
+    if ip and ipaddress.ip_address(ip) in FAKE_IP_NET:
+        r["fake_ip"] = True
+        if t.get("ip"):
+            ip, r["note"] = t["ip"], "Fake-IP，已改用内置 IP"
+        else:
+            r["note"] = "Fake-IP! 请关闭代理后重测"
+    elif not ip:
+        if not t.get("ip"):
+            r["note"] = "DNS 解析失败"
+            return r
+        ip, r["note"] = t["ip"], "DNS 失败，已改用内置 IP"
     r["ip"] = ip
-    if ipaddress.ip_address(ip) in FAKE_IP_NET:
-        r["note"] = "Fake-IP! 请关闭代理后重测"
     # 先用 80 端口，不通再试 443
     for port in (80, 443):
         samples = tcp_ping(ip, port, args.count, args.interval, args.timeout)
@@ -113,6 +112,9 @@ def ping_target(t, args):
     r["min_ms"] = round(min(samples), 1)
     r["median_ms"] = round(statistics.median(samples), 1)
     r["jitter_ms"] = round(statistics.pstdev(samples), 1) if len(samples) > 1 else 0.0
+    if r["median_ms"] < MIN_PLAUSIBLE_MS:
+        r["tun"] = True
+        r["note"] = (r["note"] + "; " if r["note"] else "") + "延迟不真实(VPN?)"
     return r
 
 
@@ -294,9 +296,12 @@ def main():
         results = list(ex.map(lambda t: ping_target(t, args), targets))
     print(f"延迟测试完成，用时 {time.perf_counter() - t0:.1f}s")
 
-    if any("Fake-IP" in r["note"] for r in results):
+    if any(r.get("fake_ip") for r in results):
         print("\n[警告] 有域名被解析到 198.18.x.x（Fake-IP），说明代理/VPN 还开着，"
-              "结果不是直连数据。请关闭后重测。\n")
+              "结果不是直连数据。请关闭后重测。")
+    if any(r.get("tun") for r in results):
+        print(f"\n[警告] 有机房延迟低于 {MIN_PLAUSIBLE_MS}ms，到美国不可能这么快——"
+              "VPN/TUN 在本地代答了连接，这一轮数据作废。请彻底关闭 VPN 后重测。")
 
     results.sort(key=sort_key)
 
