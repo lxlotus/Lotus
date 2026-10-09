@@ -65,7 +65,14 @@ NODE_NAME=Vultr-LA bash install.sh
 输出里有三种格式，选你用的客户端对应的那种：
 
 - `vless://...` 一整行 → v2rayNG、NekoBox、Shadowrocket、Hiddify 等：复制后在客户端里「从剪贴板导入」，或扫二维码
-- `- name: ...` 那一段 → Clash Meta / mihomo 系（FlClash、Clash Verge Rev 等）：粘贴到配置文件的 `proxies:` 下面
+- **FlClash / Clash Meta**：脚本会生成完整配置 `/root/flclash.yaml`（国内直连、其余走代理），在 Termux 里取回后导入：
+
+  ```bash
+  termux-setup-storage                     # 第一次需要，允许访问存储
+  scp root@你的服务器IP:/root/flclash.yaml ~/storage/downloads/
+  ```
+
+  FlClash →「配置」→ 右下角 **+** →「文件」→ 选 `Download/flclash.yaml` → 选中这个配置 → 启动
 
 > 链接等同于密码，不要截图发到群里或发给别人。
 

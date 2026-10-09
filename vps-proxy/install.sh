@@ -12,12 +12,13 @@
 #   HY2_PORT=8443                 Hysteria2 端口
 #   NODE_NAME=Vultr-LA            客户端里显示的节点名
 
-set -euo pipefail
+set -Eeuo pipefail
 trap 'printf "\033[1;31m[x]\033[0m 脚本在第 %s 行出错退出：%s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 CONF_DIR=/etc/sing-box
 STATE=$CONF_DIR/params.env
 LINKS=/root/proxy-links.txt
+CLASH_YAML=/root/flclash.yaml
 VLESS_PORT=443
 SNI_CANDIDATES=(www.microsoft.com www.apple.com www.amazon.com)
 
@@ -36,8 +37,11 @@ show_links() {
   if command -v qrencode >/dev/null; then
     echo
     echo "主力节点二维码（客户端扫码导入）："
-    grep -m1 '^vless://' "$LINKS" | qrencode -t ANSIUTF8
+    local link
+    link=$(grep -m1 '^vless://' "$LINKS" || true)
+    [[ -n $link ]] && qrencode -t ANSIUTF8 <<<"$link"
   fi
+  return 0
 }
 
 [[ $EUID -eq 0 ]] || die "请用 root 运行"
@@ -273,6 +277,58 @@ umask 077
   client-fingerprint: chrome
 EOF
 } > "$LINKS"
+
+# FlClash / Clash Meta 完整配置：国内直连，其余走代理
+cat > "$CLASH_YAML" <<EOF
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: warning
+ipv6: false
+geox-url:
+  geoip: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat"
+  geosite: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat"
+  mmdb: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb"
+dns:
+  enable: true
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  nameserver:
+    - https://223.5.5.5/dns-query
+    - https://doh.pub/dns-query
+
+proxies:
+  - name: $NODE_NAME-Reality
+    type: vless
+    server: $SERVER_IP
+    port: $VLESS_PORT
+    uuid: $UUID
+    network: tcp
+    tls: true
+    udp: true
+    flow: xtls-rprx-vision
+    servername: $SNI
+    reality-opts:
+      public-key: $PUBLIC_KEY
+      short-id: $SHORT_ID
+    client-fingerprint: chrome
+
+proxy-groups:
+  - name: PROXY
+    type: select
+    proxies:
+      - $NODE_NAME-Reality
+      - DIRECT
+
+rules:
+  - IP-CIDR,$SERVER_IP/32,DIRECT,no-resolve
+  - DOMAIN-SUFFIX,claude.ai,PROXY
+  - DOMAIN-SUFFIX,anthropic.com,PROXY
+  - GEOSITE,private,DIRECT
+  - GEOSITE,cn,DIRECT
+  - GEOIP,CN,DIRECT
+  - MATCH,PROXY
+EOF
 umask 022
 
 echo
@@ -280,4 +336,5 @@ log "部署完成！"
 echo
 show_links
 echo
+echo "FlClash / Clash Meta 完整配置文件：$CLASH_YAML"
 echo "以后随时运行 'bash install.sh --show' 可再次查看。"
