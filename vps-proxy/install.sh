@@ -31,6 +31,18 @@ apt_get() {
     -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold -y "$@"
 }
 
+urlencode() {
+  local LC_ALL=C s=$1 out="" c i
+  for ((i = 0; i < ${#s}; i++)); do
+    c=${s:i:1}
+    case $c in
+      [a-zA-Z0-9.~_-]) out+=$c ;;
+      *) printf -v c '%%%02X' "'$c"; out+=${c: -3} ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 show_links() {
   [[ -f $LINKS ]] || die "还没有部署过，找不到 $LINKS"
   cat "$LINKS"
@@ -243,7 +255,7 @@ SERVER_IP=$(curl -4 -fsS --max-time 8 https://api.ipify.org 2>/dev/null \
 [[ -n $SERVER_IP ]] || die "获取服务器公网 IP 失败"
 NODE_NAME=${NODE_NAME:-Vultr-$(hostname -s)}
 
-VLESS_LINK="vless://$UUID@$SERVER_IP:$VLESS_PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp#$NODE_NAME-Reality"
+VLESS_LINK="vless://$UUID@$SERVER_IP:$VLESS_PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp#$(urlencode "$NODE_NAME-Reality")"
 
 umask 077
 {
@@ -261,7 +273,7 @@ umask 077
   echo
   echo "## Clash Meta / mihomo（FlClash、Clash Verge 等）proxies 条目"
   cat <<EOF
-- name: $NODE_NAME-Reality
+- name: "$NODE_NAME-Reality"
   type: vless
   server: $SERVER_IP
   port: $VLESS_PORT
@@ -298,7 +310,7 @@ dns:
     - https://doh.pub/dns-query
 
 proxies:
-  - name: $NODE_NAME-Reality
+  - name: "$NODE_NAME-Reality"
     type: vless
     server: $SERVER_IP
     port: $VLESS_PORT
@@ -317,7 +329,7 @@ proxy-groups:
   - name: PROXY
     type: select
     proxies:
-      - $NODE_NAME-Reality
+      - "$NODE_NAME-Reality"
       - DIRECT
 
 rules:
