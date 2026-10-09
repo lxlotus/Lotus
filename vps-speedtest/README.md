@@ -30,6 +30,7 @@ python vps_speedtest.py
 | `python vps_speedtest.py --count 20` | 每个机房连 20 次，结果更稳 |
 | `python vps_speedtest.py --dl-top 3 --dl-seconds 8` | 只对前 3 名做下载测速，每个测 8 秒 |
 | `python vps_speedtest.py --compare results/A.csv results/B.csv` | 对比两次结果 |
+| `--narrow` / `--wide` | 强制窄屏或宽表格。默认终端不足 90 列（手机竖屏）时自动用窄屏 |
 
 ## 晚高峰对比
 

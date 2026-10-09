@@ -20,6 +20,7 @@ import datetime as dt
 import ipaddress
 import json
 import os
+import shutil
 import socket
 import statistics
 import sys
@@ -104,7 +105,7 @@ def ping_target(t, args):
         if samples:
             break
     if not samples:
-        r["note"] = r["note"] or "TCP 连接全部失败"
+        r["note"] = (r["note"] + "; " if r["note"] else "") + "TCP 连接全部失败"
         return r
     r["port"] = port
     r["ok"] = len(samples)
@@ -179,9 +180,29 @@ def row(cells, widths):
 
 TABLE_W = [26, 10, 9, 9, 8, 12]
 COMPARE_W = [24, 9, 9, 10, 8, 8, 9, 9, 10]
+NARROW_W = [18, 7, 6, 6, 7]  # 共 44 列，手机竖屏放得下
+WIDE_MIN_COLS = 90
 
 
-def print_table(results):
+def is_narrow(args):
+    if args.narrow:
+        return True
+    if args.wide:
+        return False
+    return shutil.get_terminal_size((WIDE_MIN_COLS, 24)).columns < WIDE_MIN_COLS
+
+
+def print_table(results, narrow):
+    if narrow:
+        print(row([" # 机房", "延迟", "抖动", "丢包", "下载"], NARROW_W))
+        print(row(["", "ms", "ms", "%", "Mbps"], NARROW_W))
+        print("-" * sum(NARROW_W))
+        for i, r in enumerate(results, 1):
+            print(row([f"{i:>2} {r['name'][:15]}", fmt(r["median_ms"]), fmt(r["jitter_ms"]),
+                       fmt(r["loss_pct"]), fmt(r["mbps"])], NARROW_W))
+            if r["note"]:
+                print(f"   └ {r['note']}")
+        return
     print(row(["  # 机房", "中位延迟", "最低", "抖动", "丢包", "下载"], TABLE_W) + "  备注")
     print("-" * 90)
     for i, r in enumerate(results, 1):
@@ -230,9 +251,20 @@ def diff(a, b, suffix):
     return f"{'+' if d >= 0 else ''}{d:.1f}{suffix}"
 
 
-def compare(path_a, path_b):
+def compare(path_a, path_b, narrow):
     a, b = load_csv(path_a), load_csv(path_b)
     print(f"A = {path_a}\nB = {path_b}\n")
+    if narrow:
+        for name in sorted(set(a) | set(b)):
+            ra, rb = a.get(name, {}), b.get(name, {})
+            la, lb = num(ra.get("median_ms")), num(rb.get("median_ms"))
+            sa, sb = num(ra.get("mbps")), num(rb.get("mbps"))
+            pa, pb = num(ra.get("loss_pct")), num(rb.get("loss_pct"))
+            print(name)
+            print(f"  延迟 {fmt(la)} → {fmt(lb)} ms ({diff(la, lb, '')})")
+            print(f"  丢包 {fmt(pa)} → {fmt(pb)} %   下载 {fmt(sa)} → {fmt(sb)} Mbps")
+        print("\n延迟变化为正 = 变慢；下载变小 = 变慢。")
+        return
     print(row(["机房", "延迟A", "延迟B", "变化", "丢包A", "丢包B", "下载A", "下载B", "变化"], COMPARE_W))
     print("-" * 96)
     for name in sorted(set(a) | set(b)):
@@ -276,10 +308,12 @@ def main():
     p.add_argument("--label", default="", help="结果文件名后缀，例如 peak / offpeak")
     p.add_argument("--out", default="results", help="结果保存目录（默认 results）")
     p.add_argument("--compare", nargs=2, metavar=("A.csv", "B.csv"), help="对比两次测试结果")
+    p.add_argument("--narrow", action="store_true", help="窄屏输出（终端不足 90 列时默认启用）")
+    p.add_argument("--wide", action="store_true", help="强制宽表格输出")
     args = p.parse_args()
 
     if args.compare:
-        compare(*args.compare)
+        compare(*args.compare, is_narrow(args))
         return
 
     targets = load_targets(args)
@@ -317,7 +351,7 @@ def main():
             print(f" {fmt(mbps, ' Mbps')}" if mbps is not None else f" 失败（{note}）")
 
     print(f"\n总用时 {time.perf_counter() - t0:.1f}s\n")
-    print_table(results)
+    print_table(results, is_narrow(args))
     path = save_csv(results, args.out, args.label)
     print(f"\n结果已保存：{path}")
     print("说明：延迟是 TCP 建连时间（约等于 ping），下载是单线程速度。"
