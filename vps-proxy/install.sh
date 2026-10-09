@@ -13,6 +13,7 @@
 #   NODE_NAME=Vultr-LA            客户端里显示的节点名
 
 set -euo pipefail
+trap 'printf "\033[1;31m[x]\033[0m 脚本在第 %s 行出错退出：%s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 
 CONF_DIR=/etc/sing-box
 STATE=$CONF_DIR/params.env
@@ -87,8 +88,10 @@ log "sing-box 版本：$(sing-box version | head -1)"
 pick_sni() {
   local s
   for s in "${SNI_CANDIDATES[@]}"; do
-    if echo | timeout 8 openssl s_client -connect "$s:443" -servername "$s" \
-         -tls1_3 -alpn h2 2>/dev/null | grep -q 'ALPN protocol: h2'; then
+    local out
+    out=$(echo | timeout 8 openssl s_client -connect "$s:443" -servername "$s" \
+            -tls1_3 -alpn h2 2>/dev/null || true)
+    if grep -q 'ALPN protocol: h2' <<<"$out"; then
       echo "$s"; return
     fi
   done
@@ -195,7 +198,11 @@ systemctl is-active --quiet sing-box || { journalctl -u sing-box -n 30 --no-page
 log "sing-box 已运行"
 
 # ---------- 6. 防火墙 ----------
-SSH_PORT=$(sshd -T 2>/dev/null | awk '/^port /{print $2; exit}')
+# Ubuntu 24.04 的 ssh 是 socket 激活，/run/sshd 可能不存在，sshd -T/-t 会因此报错
+mkdir -p /run/sshd
+# 先完整取输出再解析：直接管道给 awk 提前退出会让 sshd 收到 SIGPIPE，在 pipefail 下中断脚本
+SSHD_CONF=$(sshd -T 2>/dev/null || true)
+SSH_PORT=$(awk '/^port /{print $2; exit}' <<<"$SSHD_CONF")
 SSH_PORT=${SSH_PORT:-22}
 log "配置防火墙（放行 SSH $SSH_PORT/tcp、代理 $VLESS_PORT/tcp）"
 ufw allow "$SSH_PORT/tcp" >/dev/null
@@ -227,7 +234,9 @@ systemctl enable --now fail2ban >/dev/null 2>&1 || warn "fail2ban 启动失败"
 
 # ---------- 8. 生成客户端配置 ----------
 SERVER_IP=$(curl -4 -fsS --max-time 8 https://api.ipify.org 2>/dev/null \
-  || ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+  || ip -4 route get 1.1.1.1 | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}' \
+  || true)
+[[ -n $SERVER_IP ]] || die "获取服务器公网 IP 失败"
 NODE_NAME=${NODE_NAME:-Vultr-$(hostname -s)}
 
 VLESS_LINK="vless://$UUID@$SERVER_IP:$VLESS_PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp#$NODE_NAME-Reality"
