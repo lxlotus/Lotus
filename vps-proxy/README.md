@@ -107,3 +107,24 @@ ENABLE_HY2=1 bash install.sh
 
 在 Vultr 开一台硅谷或西雅图的机器，同样的方式部署，`NODE_NAME` 改成 `Vultr-SJC` 之类即可。
 记得：Vultr **关机也收费**，不用的机器要 Destroy。
+
+## 可选：给 Lotus Agent Lab 的只读监控（setup-monitor.sh）
+
+让手机上的 Lotus Agent Lab 后端定时读取服务器状态（sing-box 运行状态、CPU、内存、磁盘、本月流量）。
+
+**安全设计**：专用账号 `lotusmon` + 专用钥匙。钥匙带 `restrict,command=` 限制：登录后只会运行 `/usr/local/bin/lotus-vps-stats` 输出一行 JSON，不能开 shell、不能端口转发、不能 scp。统计脚本不读 `/etc/sing-box/`。脚本**不修改** sshd、ufw、sing-box。
+
+```bash
+# 1) Termux：生成专用监控钥匙（不要用 id_ed25519）
+ssh-keygen -t ed25519 -N "" -C lotus-vps-monitor -f ~/.ssh/lotus_vps_monitor
+
+# 2) Termux：一条命令装到服务器（公钥从标准输入传入；<commit> 换成最新提交）
+ssh root@<VPS IP> 'curl -fsSL https://raw.githubusercontent.com/lxlotus/Lotus/<commit>/vps-proxy/setup-monitor.sh -o /root/setup-monitor.sh && bash /root/setup-monitor.sh' < ~/.ssh/lotus_vps_monitor.pub
+
+# 3) Termux：验证（只应输出一行 JSON）
+ssh -i ~/.ssh/lotus_vps_monitor -o IdentitiesOnly=yes lotusmon@<VPS IP>
+```
+
+服务器上：`bash setup-monitor.sh --test` 查看输出，`--uninstall` 完全移除。换钥匙：重新执行第 2 步传入新公钥即可（旧钥匙立即失效）。
+
+输出字段（schema 1）：`host`（主机名、系统、开机时长、网卡上的公网 IP）、`cpu`（1 秒窗口两次采样）、`memory`（MemTotal−MemAvailable）、`disk`（根分区）、`proxy`（systemd 状态、启动时间、重启次数、版本、443 监听与连接数）、`traffic`（vnstat 本月收发；`tracking_since` 之前的流量不在统计内）、`counters`（开机以来网卡累计字节）、`system.reboot_required`。任何一项采集失败都是 `{"ok": false, "error": "..."}`，不会用 0 冒充。
