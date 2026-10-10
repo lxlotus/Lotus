@@ -360,9 +360,12 @@ def main():
         if total <= 0:
             raise ValueError("cpu window")
         load = [float(x) for x in read("/proc/loadavg").split()[:3]]
+        # Raw cumulative jiffies let the caller average over its own poll interval,
+        # which hides the cost of this very login (the 1 s window cannot).
         result["cpu"] = {"ok": True, "percent": round(100.0 * (total - idle) / total, 1),
                          "window_s": round(time.monotonic() - started, 2),
-                         "cores": os.cpu_count(), "load": load}
+                         "cores": os.cpu_count(), "load": load,
+                         "counters": {"total": after[0], "idle": after[1]}}
     except Exception as exc:
         result["cpu"] = fail(exc)
     result["ts"] = int(time.time())

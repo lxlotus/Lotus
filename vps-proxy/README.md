@@ -127,4 +127,4 @@ ssh -i ~/.ssh/lotus_vps_monitor -o IdentitiesOnly=yes lotusmon@<VPS IP>
 
 服务器上：`bash setup-monitor.sh --test` 查看输出，`--uninstall` 完全移除。换钥匙：重新执行第 2 步传入新公钥即可（旧钥匙立即失效）。
 
-输出字段（schema 1）：`host`（主机名、系统、开机时长、网卡上的公网 IP）、`cpu`（1 秒窗口两次采样）、`memory`（MemTotal−MemAvailable）、`disk`（根分区）、`proxy`（systemd 状态、启动时间、重启次数、版本、443 监听与连接数）、`traffic`（vnstat 本月收发；`tracking_since` 之前的流量不在统计内）、`counters`（开机以来网卡累计字节）、`system.reboot_required`。任何一项采集失败都是 `{"ok": false, "error": "..."}`，不会用 0 冒充。
+输出字段（schema 1）：`host`（主机名、系统、开机时长、网卡上的公网 IP）、`cpu`（1 秒窗口两次采样，另附累计计数 `counters` 供调用方按轮询间隔求平均）、`memory`（MemTotal−MemAvailable）、`disk`（根分区）、`proxy`（systemd 状态、启动时间、重启次数、版本、443 监听与连接数）、`traffic`（vnstat 本月收发；`tracking_since` 之前的流量不在统计内）、`counters`（开机以来网卡累计字节）、`system.reboot_required`。任何一项采集失败都是 `{"ok": false, "error": "..."}`，不会用 0 冒充。
