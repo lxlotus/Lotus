@@ -103,6 +103,10 @@ ENABLE_HY2=1 bash install.sh
 
 注意：中国移动对 UDP 有时会限速，Hysteria2 不一定更快，作为备用即可。
 
+## IP 被墙了
+
+按 [RUNBOOK-IP-BLOCKED.md](RUNBOOK-IP-BLOCKED.md) 处理：确认被墙 → 开新机 → 更新 Clash / Lab IP 页 / Lab VPS 页。AI 助手先按它的方法做，走不通再用自己的办法。
+
 ## 换机房 / 备用节点
 
 在 Vultr 开一台硅谷或西雅图的机器，同样的方式部署，`NODE_NAME` 改成 `Vultr-SJC` 之类即可。
