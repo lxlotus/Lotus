@@ -38,6 +38,28 @@ ssh root@新IP 'bash /root/install.sh --show'
 
 第一次连会问 `yes/no`，输 `yes`。
 
+### 2.1 更省事的开新机法：用快照（推荐，需提前拍好）
+
+平时在一台**确认稳定**的机器上拍一张快照（Vultr → Snapshots，按存储量收费，几毛钱一个月，价格以 Vultr 页面为准）。以后被墙：
+
+1. Vultr 用快照开新机（同样先用 itdog 测新 IP 的 22 端口，通才留）
+2. 快照里已有 sing-box、密钥和配置，**不用重装**。只需让脚本按新 IP 刷新配置（密钥不变）：
+
+```bash
+ssh root@新IP 'bash /root/install.sh'
+```
+
+3. 取回 Clash 配置（脚本每次运行都会按当前公网 IP 重写它）：
+
+```bash
+termux-setup-storage
+scp root@新IP:/root/flclash.yaml ~/storage/downloads/
+```
+
+4. Clash Meta 导入 `Download/flclash.yaml` 并选中，然后继续做第 3 节里的 3.2、3.3
+
+注意：快照里是拍摄时的脚本版本；SSH 主机密钥也一起带过来了，所以 VPS 页配对时的指纹不变，但 IP 变了仍需重新配对（3.3）。
+
 ## 3. 更新手机上的三处
 
 ### 3.1 Clash Meta 节点
@@ -86,7 +108,8 @@ sed -i 's/旧IP/新IP/' ~/p.sh && bash ~/p.sh
 
 - Clash Meta 里**保留商业代理节点**当「找 Claude 的专线」：偶尔上来求救、聊几句没问题；它是上千人共用的出口，**不要长期用它登录 ChatGPT / Claude 账号**（验证多，风控风险高）
 - 自建挂了就手动切到商业节点；平时账号类流量只走自建的独享 IP
-- 想更稳：另备一台不同机房的小 VPS（平时关机或不建），主节点挂了直接开
+- 低成本的「备用线路」：给稳定的那台拍快照（见 2.1），不要常开第二台机器（每月多花几美元），也不要「关机放着」（Vultr 关机照样收费）
+- 想更稳：另备一台不同机房的小 VPS，主节点挂了再开
 
 ## 6. 踩坑记录
 
