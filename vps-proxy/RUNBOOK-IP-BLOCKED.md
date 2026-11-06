@@ -12,7 +12,7 @@ Lotus 只用手机（Termux），没有电脑；他看不懂代码，只认几�
 
 - Clash Meta 里自建节点连不上，商业代理能上
 - Lab → Activity → IP 页：出口不是自建服务器的 IP，或 Exit check 显示 Mismatch
-- Lab → Activity → VPS 页：`SSH blocked` / `Timed out` / `Monitor offline`，下面的数字是几小时前的缓存
+- Lab → Activity → VPS 页：`SSH blocked` / `Timed out` / `Monitor offline`，下面的数字是几小时前的缓存（**只有这一条、代理照常能用** → 多半不是被墙，先看 1.5）
 - Termux 里 `ssh root@服务器IP` 超时
 
 确认方法：用 itdog.cn 的「在线Tcping」测 **`IP:443`**（或 22）。国内节点基本全部超时，就是被墙了。
@@ -24,6 +24,43 @@ Lotus 只用手机（Termux），没有电脑；他看不懂代码，只认几�
 - 2026-10-29 实例：旧机 ping 317 个节点全超时（被墙），新机只有 35 个超时（正常）
 
 > ⚠️ 不要测 80 端口。ufw 只放行 22 和 443，80 本来就不通，全红不能说明被墙。（2026-10-26 当天就测了 80，白看了半天。）
+
+## 1.5 不是被墙：代理能用，只有 SSH 连不上
+
+症状：Clash 里自建节点照常能用，IP 页正常；但 VPS 页是 `Monitor offline` / `SSH unreachable`（3.0.8 及以前写作 `SSH blocked`），数字停在几小时或几天前；Termux 里 `ssh root@服务器IP` 也连不上。
+
+**先从国外测 22 端口**（App 3.0.9 起，VPS 页红框下面的 **Test port 22 from abroad** 直接打开它）：
+
+```
+https://check-host.net/check-tcp?host=服务器IP:22
+```
+
+- **国外也几乎全红（`Connection refused`）** → 不是墙，是服务器上的 SSH 自己停了。按下面修，**不要开新机**
+- **国外大多是绿的，只有国内不通** → 是国内把 22 封了。代理没事就先不动；要恢复 SSH，给 sshd 加一个别的端口（再找 AI 做）
+
+### SSH 自己停了的修法（Vultr 网页控制台，不用 SSH）
+
+1. Vultr → Products → 点这台服务器；Overview 页里 **Password** 旁边点复制
+2. 右上角显示器图标 **View Console**；输 `root` 回车，粘贴密码回车（不显示是正常的）
+3. 先看状态（粘贴一行回车）：
+
+```bash
+systemctl is-active ssh ssh.socket
+```
+
+两行分别是 `inactive` 和 `failed`，就是 2026-11-06 那次的情况。
+
+4. 修（改用常驻的 ssh.service，粘贴一行回车）：
+
+```bash
+systemctl disable --now ssh.socket; systemctl enable --now ssh; systemctl is-active ssh
+```
+
+最后一行出 `active` 就好了。再用 check-host 测一次应全绿；回 App 的 VPS 页点刷新，数字回来（配对不用重做，主机指纹没变）。
+
+> 控制台里粘贴命令时竖线 `|` 可能会变形（2026-11-06 出现过），给 Lotus 的控制台命令里**不要用 `|`**，用 `;` 分开。
+
+**原因（2026-11-06 查明）**：这台机器内核里 IPv6 是关着的（`/proc/sys/net/ipv6` 不存在）。Ubuntu 24.04 默认用 `ssh.socket` 替 sshd 开 22 端口，它要同时开 IPv4 和 IPv6，没有 IPv6 就以 `Failed with result 'resources'` 失败，22 端口没人接，全世界都是 refused。sshd 配置本身是好的（`sshd -t` 无报错）。改成 ssh.service 后 sshd 自己开端口，没有 IPv6 也能只开 IPv4，以后重启也不会再犯。`install.sh`（2026-11-06 起）装机时就会改用 ssh.service。
 
 ## 2. 开新机（按小时计费，几美分）
 
@@ -121,5 +158,6 @@ sed -i 's/旧IP/新IP/' ~/p.sh && bash ~/p.sh
 | 2026-10-26 | 改了 `PROXY_EXPECTED_IP` 后 IP 页仍是 Mismatch | 后端只在启动时读配置，需重启 Lab 后端（10-29 重启后恢复） |
 | 2026-10-29 | 早上自建和商业美国节点同时连不上，下午自行恢复 | 当时先判成线路问题，后测 ping 发现旧机确实全超时（被墙），新机正常；以 ping 结果为准，别凭感觉 |
 | 2026-10-29 | 旧机 149.28.69.76 被墙，换到 149.28.95.214 | 按本文 3.1–3.3 重做，旧机已 Destroy |
+| 2026-11-04 → 11-06 | VPS 页 `SSH blocked` 两天，代理一直正常；当时以为是国内封了 22 | check-host 国外也全 `refused`：其实是 ssh.socket 因 IPv6 被关而失败（`resources`），SSH 根本没在听。Vultr 控制台改用 ssh.service 后恢复，见 1.5。先测国外，别先猜墙 |
 
 > 补充规则：每次被墙处理完，往上表加一行；链接、密钥、配对码不要写进仓库。

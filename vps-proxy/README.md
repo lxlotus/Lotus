@@ -9,6 +9,7 @@
 | 防火墙 | ufw 只放行 SSH 和 443 | 不暴露多余端口 |
 | SSH | 关闭密码登录，只允许密钥（前提是已配置 SSH Key） | 杜绝密码爆破 |
 | 防爆破 | fail2ban | 自动封禁暴力尝试 SSH 的 IP |
+| SSH 常驻 | Ubuntu 上改用 ssh.service，不用 ssh.socket | 内核关了 IPv6 时 ssh.socket 会起不来、22 端口没人接（2026-11-06 踩过，见 [RUNBOOK](RUNBOOK-IP-BLOCKED.md) 1.5） |
 | 更新 | 自动安装系统安全更新 | 长期无人值守也能及时打补丁 |
 
 重复运行不会改变密钥，手机上的配置一直有效。

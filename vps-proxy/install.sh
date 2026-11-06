@@ -245,6 +245,16 @@ else
   warn "root 没有配置 SSH 密钥，暂不关闭密码登录。建议在 Vultr 添加 SSH Key 后重跑本脚本。"
 fi
 
+# Ubuntu 22.10+ 默认用 ssh.socket 替 sshd 开 22 端口。内核关了 IPv6 时它以 'resources' 失败，22 端口就没人接
+# （2026-11-06：149.28.95.214 的 SSH 因此停了两天，见 RUNBOOK-IP-BLOCKED.md 1.5）。改用常驻的 ssh.service：
+# sshd 自己开端口，没有 IPv6 也能只开 IPv4。disable 先删掉 ssh.service 对 socket 的依赖，正在用的 SSH 会话不受影响。
+if systemctl is-enabled ssh.socket >/dev/null 2>&1; then
+  log "SSH 改用常驻的 ssh.service（不用 ssh.socket）"
+  systemctl disable --now ssh.socket >/dev/null 2>&1 || true
+  systemctl enable --now ssh >/dev/null 2>&1 || warn "ssh.service 启动失败：请用 Vultr 网页控制台检查（RUNBOOK-IP-BLOCKED.md 1.5）"
+  systemctl is-active --quiet ssh || warn "ssh.service 没在运行：请用 Vultr 网页控制台检查（RUNBOOK-IP-BLOCKED.md 1.5）"
+fi
+
 log "启用 fail2ban（防 SSH 暴力破解）"
 systemctl enable --now fail2ban >/dev/null 2>&1 || warn "fail2ban 启动失败"
 
